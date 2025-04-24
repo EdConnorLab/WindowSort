@@ -29,7 +29,8 @@ def main():
     app = QApplication(sys.argv)
 
     # Load the default directory
-    default_directory = get_default_directory()
+    # default_directory = get_default_directory()
+    default_directory = "/home/r2_allen/Documents/EStimShape/allen_sort_250421_0"
 
     # Create a directory selection dialog
     options = QFileDialog.Options()
@@ -67,7 +68,7 @@ def get_default_directory():
     """Retrieve the default directory from the configuration file."""
     config = configparser.ConfigParser()
     config.read(CONFIG_PATH)
-    return config.get('DEFAULT', 'data_directory', fallback='')
+    return config.get('DEFAULT', 'data_directory', fallback='sftp://172.30.9.78/home/i2_allen/Documents/EStimShape/')
 
 
 class MainWindow(QMainWindow):
