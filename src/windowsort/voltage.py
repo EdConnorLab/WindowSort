@@ -42,7 +42,7 @@ class VoltageTimePlot(QWidget):
         if self.current_channel is None:
             return
         channel_name = self.current_channel
-        voltages = self.data_handler.voltages_by_channel[channel_name]
+        voltages = self.data_handler.get_channel_data(channel_name)
         sample_rate = self.data_handler.sample_rate
 
         # Calculate the indices for the time window
@@ -142,8 +142,10 @@ class TimeScrubber(QWidget):
         self.setLayout(layout)
 
         # Get total time duration based on the first channel in the dataset
-        channel_name = list(self.voltage_time_plot.data_handler.voltages_by_channel.keys())[0]
-        total_samples = len(self.voltage_time_plot.data_handler.voltages_by_channel[channel_name])
+        channel_name = self.voltage_time_plot.data_handler.get_channels()[0]  # Assuming the first channel is the one to use
+        # channel_name = None
+        total_samples = len(self.voltage_time_plot.data_handler.get_channel_data(channel_name))  # Get the number of samples for the first channel
+        # total_samples = 0
         total_time_seconds = (total_samples / self.voltage_time_plot.data_handler.sample_rate)
 
         self.slider.setRange(0, int(total_time_seconds))  # Set range based on actual data
@@ -171,7 +173,7 @@ class ChannelSelectionPanel(QWidget):
         layout = QVBoxLayout()
 
         self.channelComboBox = QComboBox()
-        channel_list = list(self.voltage_time_plot.data_handler.voltages_by_channel.keys())
+        channel_list = list(self.voltage_time_plot.data_handler.get_channels())
         self.channelComboBox.addItems([channel.value for channel in channel_list])
 
         layout.addWidget(QLabel("Select Channel:"))

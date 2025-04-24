@@ -37,7 +37,7 @@ class ThresholdedSpikePlot(QWidget):
 
         # self.threshold_spikes(threshold_value)
 
-        voltages = self.data_handler.voltages_by_channel[self.current_channel]
+        voltages = self.data_handler.get_channel_data(self.current_channel)
 
         # Calculate the min_max voltage if it is not set yet
         if self.min_max_voltage is None:
@@ -57,7 +57,8 @@ class ThresholdedSpikePlot(QWidget):
 
     def threshold_spikes(self, threshold_value):
         self.current_threshold_value = threshold_value
-        voltages = self.data_handler.voltages_by_channel[self.current_channel]
+        voltages = self.data_handler.get_channel_data(self.current_channel)
+
         self.crossing_indices = threshold_spikes_absolute(threshold_value, voltages)
 
     def clear_plot(self):

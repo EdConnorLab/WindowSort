@@ -1,8 +1,8 @@
-appdirs~=1.4.4
-ConnorLabAnalysisTools~=0.2.2
+appdirs>=1.4.4
+ConnorLabAnalysisTools>=0.2.2
 numpy>=1.26.1
 PyQt5~=5.15.10
 PyQt5_sip~=12.13.0
-pyqtgraph~=0.13.3
-scipy~=1.13.0
-setuptools==68.0.0
+pyqtgraph>=0.13.3
+scipy>=1.13.0
+setuptools>=68.0.0

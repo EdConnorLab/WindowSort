@@ -95,7 +95,7 @@ class SnapshotPlot(ThresholdedSpikePlot):
 
         # Fetch the voltages for the current channel
         channel = self.sort_panel.spike_plot.current_channel
-        voltages = self.data_handler.voltages_by_channel[channel]
+        voltages = self.data_handler.get_channel_data(channel)
 
         # Check if the number of spikes exceeds max_spikes, and if so, sample randomly
 

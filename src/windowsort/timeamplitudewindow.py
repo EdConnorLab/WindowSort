@@ -255,7 +255,7 @@ class SortSpikePlot(ThresholdedSpikePlot):
 
     def sortSpikes(self):
         try:
-            voltages = self.data_handler.voltages_by_channel[self.current_channel]
+            voltages = self.data_handler.get_channel_data(self.current_channel)
             subset_of_crossing_indices = self.crossing_indices[
                                          self.current_start_index:self.current_start_index + self.current_max_spikes]
 
@@ -276,7 +276,7 @@ class SortSpikePlot(ThresholdedSpikePlot):
         if self.current_threshold_value is None:
             return  # Exit if the threshold is not set yet
 
-        voltages = self.data_handler.voltages_by_channel[self.current_channel]
+        voltages = self.data_handler.get_channel_data(self.current_channel)
 
         # Calculate the min_max voltage if it is not set yet
         if self.min_max_voltage is None:

@@ -10,86 +10,141 @@ from scipy.signal import butter, filtfilt
 from clat.intan.amplifiers import read_amplifier_data_with_mmap
 from clat.intan.channels import Channel
 from clat.intan.rhd import load_intan_rhd_format
+from clat.intan.rhs import load_intan_rhs_format
 from windowsort.drift import DriftingTimeAmplitudeWindow
 from windowsort.units import Unit
+
 
 
 class InputDataManager:
     def __init__(self, intan_file_directory):
         self.intan_file_directory = intan_file_directory
-        self.voltages_by_channel: dict[Channel, np.ndarray] = {}
-        self.sample_rate = None  # You can initialize this from info.rhd if needed
-        self.read_data()
+        self.sample_rate = None
+        self.amplifier_channels = None
+        self.preprocessed_dir = os.path.join(intan_file_directory, "preprocessed_data")
+        self.channel_cache = {}  # Limited memory cache for recently accessed channels
+        self.max_cached_channels = 5  # Maximum number of channels to keep in memory
+        self.init_data()
 
-    def read_data(self):
-        # Paths for original and preprocessed data
-        info_rhd_path = os.path.join(self.intan_file_directory, "info.rhd")
-        amplifier_dat_path = os.path.join(self.intan_file_directory, "amplifier.dat")
-        self.preprocessed_dat_path = os.path.join(self.intan_file_directory, "preprocessed_data.dat")
+    def init_data(self):
+        """Initialize by reading metadata but not loading all channel data"""
+        # Load RHD/RHS info file
+        if os.path.exists(os.path.join(self.intan_file_directory, "info.rhd")):
+            info_path = os.path.join(self.intan_file_directory, "info.rhd")
+            data = load_intan_rhd_format.read_data(info_path)
+        elif os.path.exists(os.path.join(self.intan_file_directory, "info.rhs")):
+            info_path = os.path.join(self.intan_file_directory, "info.rhs")
+            data = load_intan_rhs_format.read_data(info_path)
+        else:
+            raise FileNotFoundError("No info.rhd or info.rhs file found in directory")
 
-        # Extract information from info.rhd
-        data = load_intan_rhd_format.read_data(info_rhd_path)
-        amplifier_channels = data['amplifier_channels']
+        # Store metadata
+        self.amplifier_channels = data['amplifier_channels']
         self.sample_rate = data['frequency_parameters']['amplifier_sample_rate']
 
-        # Check if preprocessed data already exists
-        if os.path.exists(self.preprocessed_dat_path):
-            print("Preprocessed data found. Loading...")
-            self.voltages_by_channel = read_amplifier_data_with_mmap(self.preprocessed_dat_path, amplifier_channels)
+        # Ensure preprocessed directory exists
+        if not os.path.exists(self.preprocessed_dir):
+            os.makedirs(self.preprocessed_dir)
+
+    def get_channel_data(self, channel: Channel) -> np.ndarray:
+        """Get data for a specific channel, preprocessing if needed"""
+        # Check if channel is in cache
+        if channel in self.channel_cache:
+            return self.channel_cache[channel]
+
+        # Check if preprocessed data exists for this channel
+        channel_file = os.path.join(self.preprocessed_dir, f"{channel.value}.npy")
+
+        if os.path.exists(channel_file):
+            # Load preprocessed data for this channel
+            voltages = np.load(channel_file)
         else:
-            print("Preprocessed data not found. Preprocessing and saving...")
-            # Load original data
-            self.voltages_by_channel = read_amplifier_data_with_mmap(amplifier_dat_path, amplifier_channels)
-            # Preprocess and save the data
-            self.preprocess_data()
-            del self.voltages_by_channel  # Delete the original data to save memory
-            self.voltages_by_channel = read_amplifier_data_with_mmap(self.preprocessed_dat_path, amplifier_channels)
+            # Preprocess this channel and save it
+            voltages = self._preprocess_channel(channel)
+            np.save(channel_file, voltages)
 
-    def preprocess_data(self):
-        # New dictionary to hold preprocessed data
-        preprocessed_data = {}
+        # Add to cache, managing cache size
+        self._update_cache(channel, voltages)
 
-        # Iterate through channels, filter data, and store in new dict
-        for channel, voltages in self.voltages_by_channel.items():
-            filtered_voltages = self._highpass_filter(voltages, cutoff=300)
-            preprocessed_data[channel] = filtered_voltages.astype('int16')  # Convert back to int16
+        return voltages
 
-        # Save preprocessed data to a new binary file
-        self._save_preprocessed_data(preprocessed_data, self.preprocessed_dat_path)
+    def get_channels(self) -> List[Channel]:
+        """Get list of available channels"""
+        channels = []
+        for ch_info in self.amplifier_channels:
+            channel_name = ch_info.get("native_channel_name")
+            if channel_name:
+                channels.append(Channel(channel_name))
+        return channels
+
+    def _preprocess_channel(self, channel: Channel) -> np.ndarray:
+        """Load and preprocess a single channel from the original data"""
+        # Find channel index in amplifier_channels
+        channel_idx = None
+        for i, ch_info in enumerate(self.amplifier_channels):
+            if ch_info.get("native_channel_name") == channel.value:
+                channel_idx = i
+                break
+
+        if channel_idx is None:
+            raise ValueError(f"Channel {channel.value} not found in amplifier channels")
+
+        # Read only this channel's data from amplifier.dat
+        amplifier_dat_path = os.path.join(self.intan_file_directory, "amplifier.dat")
+
+        # Get file size to determine number of samples
+        file_size = os.path.getsize(amplifier_dat_path)
+        num_channels = len(self.amplifier_channels)
+        num_samples = file_size // (num_channels * 2)  # int16 = 2 bytes
+
+        # Memory-mapped read of just this channel
+        with open(amplifier_dat_path, 'rb') as f:
+            # Create memory mapping for the whole file
+            data = np.memmap(amplifier_dat_path, dtype='int16', mode='r',
+                             shape=(num_samples, num_channels))
+
+            # Extract only the column for this channel
+            channel_data = data[:, channel_idx].copy()  # Make a copy to avoid memmap issues
+
+        # Convert to microvolts
+        voltages = channel_data.astype(np.float32) * 0.195
+
+        # Apply highpass filter
+        filtered_voltages = self._highpass_filter(voltages)
+
+        return filtered_voltages
 
     def _highpass_filter(self, data, cutoff=300, order=5):
+        """Apply highpass filter to data"""
         b, a = self._butter_highpass(cutoff, self.sample_rate, order=order)
         y = filtfilt(b, a, data)
         return y
 
     def _butter_highpass(self, cutoff, fs, order=5):
+        """Design highpass filter"""
         nyquist = 0.5 * fs
         normal_cutoff = cutoff / nyquist
         b, a = butter(order, normal_cutoff, btype='high', analog=False)
         return b, a
 
-    def _save_preprocessed_data(self, preprocessed_data, output_file_path, chunk_size=10000):
-        # Get the number of channels and samples
-        num_channels = len(preprocessed_data)
-        num_samples = len(next(iter(preprocessed_data.values())))
+    def _update_cache(self, channel: Channel, data: np.ndarray):
+        """Add channel data to cache, removing least recently used if necessary"""
+        # Add to cache
+        self.channel_cache[channel] = data
 
-        with open(output_file_path, 'wb') as f:  # 'wb' mode for binary writing
-            for start_idx in range(0, num_samples, chunk_size):
-                end_idx = start_idx + chunk_size
+        # If cache is too large, remove oldest entry
+        if len(self.channel_cache) > self.max_cached_channels:
+            # Remove first key (oldest) - this assumes Python 3.7+ where dict maintains insertion order
+            oldest_channel = next(iter(self.channel_cache))
+            del self.channel_cache[oldest_channel]
 
-                # Create an empty NumPy array to hold chunk of the data
-                current_chunk_size = min(chunk_size, num_samples - start_idx)
-                data_chunk = np.empty((current_chunk_size, num_channels), dtype='int16')
+    def get_available_channels(self) -> List[Channel]:
+        """Return list of all available channels"""
+        return [Channel(ch.get("native_channel_name")) for ch in self.amplifier_channels]
 
-                # Populate the chunk with your preprocessed data
-                for i, (channel, data) in enumerate(preprocessed_data.items()):
-                    # Convert the data to a format that, when multiplied by 0.195, gives the correct microvolt values
-                    data_chunk[:, i] = (data[start_idx:end_idx] / 0.195).astype('int16')
-
-                # Save the chunk to the binary file
-                f.write(data_chunk.tobytes())
-
-        print(f"Preprocessed Data saved to {output_file_path}.")
+    def clear_cache(self):
+        """Clear the channel cache to free memory"""
+        self.channel_cache.clear()
 
 
 class SortedSpikeExporter:

@@ -281,7 +281,7 @@ class SortPanel(QWidget):
 
 
     def sort_all_spikes(self, channel):
-        voltages = self.spike_plot.data_handler.voltages_by_channel[channel]
+        voltages = self.spike_plot.data_handler.get_channel_data(channel)
         self.spike_plot.updatePlot()  # Make sure the data is updated
         sorted_spikes_by_unit = {}
         # Pre-compute the crossing indices for the current channel
