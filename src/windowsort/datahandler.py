@@ -13,6 +13,7 @@ from clat.intan.rhd import load_intan_rhd_format
 from clat.intan.rhs import load_intan_rhs_format
 from windowsort.drift import DriftingTimeAmplitudeWindow
 from windowsort.units import Unit
+from scipy.signal import sosfilt, butter
 
 
 
@@ -110,7 +111,7 @@ class InputDataManager:
         voltages = channel_data.astype(np.float32) * 0.195
 
         # Apply highpass filter
-        filtered_voltages = self._highpass_filter(voltages)
+        filtered_voltages = self._highpass_filter_sos(voltages)
 
         return filtered_voltages
 
@@ -118,6 +119,12 @@ class InputDataManager:
         """Apply highpass filter to data"""
         b, a = self._butter_highpass(cutoff, self.sample_rate, order=order)
         y = filtfilt(b, a, data)
+        return y
+
+    def _highpass_filter_sos(self, data, cutoff=300, order=5):
+        """Apply highpass filter using second-order sections for better numerical stability"""
+        sos = butter(order, cutoff / (0.5 * self.sample_rate), btype='high', output='sos')
+        y = sosfilt(sos, data)
         return y
 
     def _butter_highpass(self, cutoff, fs, order=5):

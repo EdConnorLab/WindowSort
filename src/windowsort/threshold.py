@@ -11,6 +11,14 @@ def threshold_spikes_absolute(threshold_value, voltages):
 
     # Filter out indices where the derivative is positive or zero
     # This ensures that we only count spikes where the voltage is decreasing
-    filtered_indices = [idx for idx in crossing_indices if voltage_derivative[idx] < 0]
+    if threshold_value <= 0:
+        filtered_indices = [idx for idx in crossing_indices if voltage_derivative[idx] < 0]
+    else:
+        # For positive thresholds, we want to find the indices where the voltage is increasing
+        # after crossing the threshold
+        filtered_indices = [idx for idx in crossing_indices if voltage_derivative[idx] > 0]
+
+
+    # filtered_indices = [idx for idx in crossing_indices if voltage_derivative[idx] < 0]
 
     return np.array(filtered_indices)
